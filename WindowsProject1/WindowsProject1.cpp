@@ -3,7 +3,7 @@
 
 #include "framework.h"
 #include "WindowsProject1.h"
-
+#include <exception>
 // バージョン情報ボックスのメッセージ ハンドラーです。
 INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -25,53 +25,6 @@ INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 }
 
 
-//
-//  関数: WndProc(HWND, UINT, WPARAM, LPARAM)
-//
-//  目的: メイン ウィンドウのメッセージを処理します。
-//
-//  WM_COMMAND  - アプリケーション メニューの処理
-//  WM_PAINT    - メイン ウィンドウを描画する
-//  WM_DESTROY  - 中止メッセージを表示して戻る
-//
-//
-LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
-{
-	switch (message)
-	{
-	case WM_COMMAND:
-	{
-		int wmId = LOWORD(wParam);
-		// 選択されたメニューの解析:
-		switch (wmId)
-		{
-		case IDM_ABOUT:
-			DialogBox(HINSTANCE(GetWindowLongPtrW(hWnd, GWLP_HINSTANCE)), MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
-			break;
-		case IDM_EXIT:
-			DestroyWindow(hWnd);
-			break;
-		default:
-			return DefWindowProc(hWnd, message, wParam, lParam);
-		}
-	}
-	break;
-	case WM_PAINT:
-	{
-		PAINTSTRUCT ps;
-		HDC hdc = BeginPaint(hWnd, &ps);
-		// TODO: HDC を使用する描画コードをここに追加してください...
-		EndPaint(hWnd, &ps);
-	}
-	break;
-	case WM_DESTROY:
-		PostQuitMessage(0/*終了コード*/);
-		break;
-	default:
-		return DefWindowProc(hWnd, message, wParam, lParam);
-	}
-	return 0;
-}
 #include <string>
 namespace Win32Wrap {
 	ATOM RegisterClassExW(const WNDCLASSEXW& r)
@@ -95,6 +48,61 @@ namespace Win32Wrap {
 			return {};
 	}
 }
+class MainWindow {
+	LRESULT Handle_WM_COMMAND(HWND hWnd, WPARAM wParam, LPARAM lParam)
+	{
+		switch (const int wmId = LOWORD(wParam))
+		{
+		case IDM_ABOUT:
+			DialogBox(HINSTANCE(GetWindowLongPtrW(hWnd, GWLP_HINSTANCE)), MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
+			return 0;
+		case IDM_EXIT:
+			DestroyWindow(hWnd);
+			return 0;
+		default:
+			return DefWindowProc(hWnd, WM_COMMAND, wParam, lParam);
+		}		
+	}
+	void Handle_WM_PAINT(HWND hWnd, WPARAM wParam, LPARAM lParam)
+	{
+		PAINTSTRUCT ps;
+		const HDC hdc = BeginPaint(hWnd, &ps);
+		// TODO: HDC を使用する描画コードをここに追加してください...
+		EndPaint(hWnd, &ps);
+	}
+public:
+	static LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+	{
+		switch (message) {
+		case WM_CREATE:
+			try {
+				SetWindowLongPtr(hWnd, GWLP_USERDATA, LONG_PTR(new MainWindow));
+				return 0;
+			}
+			catch (const std::exception& e) {
+				OutputDebugStringA(e.what());;
+				OutputDebugStringA("\n");
+				return -1;
+			}
+		case WM_NCDESTROY:
+			delete reinterpret_cast<MainWindow*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
+			PostQuitMessage(0/*終了コード*/);
+			return 0;
+		case WM_COMMAND:
+			if (const auto p = reinterpret_cast<MainWindow*>(GetWindowLongPtr(hWnd, GWLP_USERDATA)))
+				return p->Handle_WM_COMMAND(hWnd, wParam, lParam);
+			else
+				return DefWindowProc(hWnd, message, wParam, lParam);
+		case WM_PAINT:
+			if (const auto p = reinterpret_cast<MainWindow*>(GetWindowLongPtr(hWnd, GWLP_USERDATA)))
+				p->Handle_WM_PAINT(hWnd, wParam, lParam);
+			return 0;
+		default:
+			return DefWindowProc(hWnd, message, wParam, lParam);
+		}
+	}
+};
+
 int APIENTRY wWinMain
 ( _In_     HINSTANCE hInstance
 , _In_opt_ HINSTANCE //hPrevInstance
@@ -106,7 +114,7 @@ int APIENTRY wWinMain
 	const auto atom = Win32Wrap::RegisterClassExW(
 	{ /*UINT        cbSize        */sizeof (WNDCLASSEXW)
 	, /*UINT        style         */CS_HREDRAW | CS_VREDRAW
-	, /*WNDPROC     lpfnWndProc   */WndProc
+	, /*WNDPROC     lpfnWndProc   */MainWindow::WindowProc
 	, /*int         cbClsExtra    */0
 	, /*int         cbWndExtra    */0
 	, /*HINSTANCE   hInstance     */hInstance
