@@ -4,6 +4,7 @@
 #include "framework.h"
 #include "WindowsProject1.h"
 #include <exception>
+#include <CommCtrl.h>
 // バージョン情報ボックスのメッセージ ハンドラーです。
 INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -49,6 +50,76 @@ namespace Win32Wrap {
 	}
 }
 class MainWindow {
+	HWND hListView;
+	MainWindow(HWND hListView)
+		: hListView(hListView)
+	{
+		LVCOLUMNW col =
+		{ /*UINT   mask       */LVCF_TEXT | LVCF_WIDTH
+		, /*int    fmt        */0
+		, /*int    cx         */100//列幅の初期値
+		, /*LPWSTR pszText    */const_cast<LPWSTR>(L"第１列")
+		, /*int    cchTextMax */0
+		, /*int    iSubItem   */0
+		, /*int    iImage     */0
+		, /*int    iOrder     */0
+		};
+		ListView_InsertColumn(hListView, 0, &col);
+		col.pszText = const_cast<LPWSTR>(L"第２列");
+		ListView_InsertColumn(hListView, 1, &col);
+
+		HKEY hKey;
+		if (RegOpenKeyW(HKEY_CURRENT_USER, szRegKey, &hKey) == ERROR_SUCCESS) {
+			const auto cCols = Header_GetItemCount(ListView_GetHeader(hListView));
+			for (int iCol = 0; iCol < cCols; ++iCol) {
+				DWORD cx;
+				DWORD dwType;
+				DWORD cbData = sizeof cx;
+				if (RegQueryValueExW
+				( /*_In_       HKEY    hKey       */hKey
+				, /*_In_opt_   LPCWSTR lpValueName*/RegValNameOfColumn(iCol).c_str()
+				, /*_Reserved_ LPDWORD lpReserved */nullptr
+				, /*_Out_opt_  LPDWORD lpType     */&dwType
+				, /*           LPBYTE  lpData     */LPBYTE(&cx)
+				, /*           LPDWORD lpcbData   */&cbData
+				) == ERROR_SUCCESS) {
+					if (dwType == REG_DWORD) {
+						ListView_SetColumnWidth(hListView, iCol, cx);
+					}
+				}
+			}
+			(void)RegCloseKey(hKey);
+		}
+
+
+	}
+	static const wchar_t szRegKey[];
+
+	static std::wstring RegValNameOfColumn(int iCol)
+	{
+		return L"cx#" + std::to_wstring(iCol);
+	}
+
+	void SaveColumnWidths()
+	{
+		HKEY hKey;
+		if (RegCreateKeyW(HKEY_CURRENT_USER, szRegKey, &hKey) == ERROR_SUCCESS) {
+			const auto cCols = Header_GetItemCount(ListView_GetHeader(hListView));
+			for (int iCol = 0;iCol < cCols; ++iCol) {
+				const DWORD cx = ListView_GetColumnWidth(hListView, iCol);
+				(void)RegSetValueExW
+				( hKey
+				, RegValNameOfColumn(iCol).c_str()
+				, 0
+				, REG_DWORD
+				, LPBYTE(&cx)
+				, sizeof cx
+				);
+			}
+			(void)RegCloseKey(hKey);
+		}
+	}
+
 	LRESULT Handle_WM_COMMAND(HWND hWnd, WPARAM wParam, LPARAM lParam)
 	{
 		switch (const int wmId = LOWORD(wParam))
@@ -76,7 +147,19 @@ public:
 		switch (message) {
 		case WM_CREATE:
 			try {
-				SetWindowLongPtr(hWnd, GWLP_USERDATA, LONG_PTR(new MainWindow));
+				SetWindowLongPtr(hWnd, GWLP_USERDATA, LONG_PTR(new MainWindow(CreateWindowW
+				( /*lpClassName */WC_LISTVIEWW
+				, /*lpWindowName*/L""
+				, /*dwStyle     */WS_CHILD | WS_VISIBLE | LVS_REPORT
+				, /*x           */0
+				, /*y           */0
+				, /*nWidth      */100
+				, /*nHeight     */100
+				, /*hWndParent  */hWnd
+				, /*hMenu       */nullptr
+				, /*hInstance   */nullptr
+				, /*lpParam     */nullptr
+				))));
 				return 0;
 			}
 			catch (const std::exception& e) {
@@ -84,24 +167,39 @@ public:
 				OutputDebugStringA("\n");
 				return -1;
 			}
+		case WM_DESTROY:
+			if (const auto p = reinterpret_cast<MainWindow*>(GetWindowLongPtr(hWnd, GWLP_USERDATA))) {
+				p->SaveColumnWidths();
+			}
+			return 0;
 		case WM_NCDESTROY:
 			delete reinterpret_cast<MainWindow*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
 			PostQuitMessage(0/*終了コード*/);
 			return 0;
+		case WM_SIZE:
+			if (const auto p = reinterpret_cast<MainWindow*>(GetWindowLongPtr(hWnd, GWLP_USERDATA))) {
+				MoveWindow
+				( /*_In_ HWND hWnd    */p->hListView
+				, /*_In_ int  X       */0
+				, /*_In_ int  Y       */0
+				, /*_In_ int  nWidth  */LOWORD(lParam)//幅  
+				, /*_In_ int  nHeight */HIWORD(lParam)//高さ
+				, /*_In_ BOOL bRepaint*/true
+				);					
+			}
+			return 0;
+
 		case WM_COMMAND:
 			if (const auto p = reinterpret_cast<MainWindow*>(GetWindowLongPtr(hWnd, GWLP_USERDATA)))
 				return p->Handle_WM_COMMAND(hWnd, wParam, lParam);
 			else
 				return DefWindowProc(hWnd, message, wParam, lParam);
-		case WM_PAINT:
-			if (const auto p = reinterpret_cast<MainWindow*>(GetWindowLongPtr(hWnd, GWLP_USERDATA)))
-				p->Handle_WM_PAINT(hWnd, wParam, lParam);
-			return 0;
 		default:
 			return DefWindowProc(hWnd, message, wParam, lParam);
 		}
 	}
 };
+const wchar_t MainWindow::szRegKey[] = LR"(Software\youtube-programmercpp\WindowsProject1)";
 
 int APIENTRY wWinMain
 ( _In_     HINSTANCE hInstance
