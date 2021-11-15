@@ -90,11 +90,41 @@ class MainWindow {
 			}
 			(void)RegCloseKey(hKey);
 		}
+	}
+	static const wchar_t szRegKey[];
+	void MakeList() const
+	{
+		LVITEM m =
+		{ /*UINT   mask       */LVIF_TEXT
+		, /*int    iItem      */0
+		, /*int    iSubItem   */0
+		, /*UINT   state      */0
+		, /*UINT   stateMask  */0
+		, /*LPTSTR pszText    */nullptr
+		, /*int    cchTextMax */0
+		, /*int    iImage     */0
+		, /*LPARAM lParam     */0
+		, /*int    iIndent    */0
+		};
+
+		for (TCHAR ch = TEXT('A'); ch <= TEXT('Z'); ++ch) {
+			TCHAR buf[256];
+			wsprintf(buf, TEXT("%02X"), ch);
+			m.pszText = buf;
+			ListView_InsertItem(hListView, &m);
+			++m.iSubItem;
+			buf[0] = ch;
+			buf[1] = TEXT('\0');
+			ListView_SetItem(hListView, &m);
+			++m.iItem;
+			m.iSubItem = 0;
+		}
+
+
+
 
 
 	}
-	static const wchar_t szRegKey[];
-
 	static std::wstring RegValNameOfColumn(int iCol)
 	{
 		return L"cx#" + std::to_wstring(iCol);
@@ -147,7 +177,7 @@ public:
 		switch (message) {
 		case WM_CREATE:
 			try {
-				SetWindowLongPtr(hWnd, GWLP_USERDATA, LONG_PTR(new MainWindow(CreateWindowW
+				const auto p = new MainWindow(CreateWindowW
 				( /*lpClassName */WC_LISTVIEWW
 				, /*lpWindowName*/L""
 				, /*dwStyle     */WS_CHILD | WS_VISIBLE | LVS_REPORT
@@ -159,7 +189,9 @@ public:
 				, /*hMenu       */nullptr
 				, /*hInstance   */nullptr
 				, /*lpParam     */nullptr
-				))));
+				));
+				p->MakeList();
+				SetWindowLongPtr(hWnd, GWLP_USERDATA, LONG_PTR(p));
 				return 0;
 			}
 			catch (const std::exception& e) {
